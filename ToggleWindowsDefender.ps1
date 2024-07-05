@@ -1,5 +1,5 @@
 # Версия скрипта
-$scriptVersion = "1.0.0"
+$scriptVersion = "1.0.1"
 
 # Установка кодировки для поддержки кириллицы
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -56,7 +56,7 @@ function Update-Script {
             $localScript = Get-Content -Path $localScriptPath -Raw
             if ($remoteScript.Content -ne $localScript) {
                 $remoteScript.Content | Out-File -FilePath $localScriptPath -Encoding UTF8
-                $message = "Скрипт обновлен до последней версии (v$scriptVersion)."
+                $message = "Скрипт обновлен до версии (v$scriptVersion)."
                 Write-Host $message -ForegroundColor Green
                 Log-Message $message
                 Show-Notification -title "Script Defender" -message $message
@@ -83,14 +83,13 @@ function Update-Script {
         $message = "Отсутствует подключение к интернету. Обновление скрипта невозможно."
         Write-Host $message -ForegroundColor Red
         Log-Message $message
-        exit
     }
 }
 
 # Создание ярлыка на рабочем столе
 function Create-Shortcut {
     $desktop = [System.Environment]::GetFolderPath("Desktop")
-    $shortcutPath = Join-Path $desktop "ToggleWindowsDefender.lnk"
+    $shortcutPath = Join-Path $desktop "Script Defender.lnk"
     if (-Not (Test-Path $shortcutPath)) {
         $targetPath = $PSCommandPath
 
@@ -100,18 +99,6 @@ function Create-Shortcut {
         $shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$targetPath`""
         $shortcut.IconLocation = $iconPath
         $shortcut.Save()
-
-        # Установка прав администратора для ярлыка
-        $shortcutFile = New-Object -ComObject WScript.Shell
-        $shortcut = $shortcutFile.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = "pwsh.exe"
-        $shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$targetPath`""
-        $shortcut.IconLocation = $iconPath
-        $shortcut.Save()
-        
-        $shell = New-Object -ComObject Shell.Application
-        $shortcut = $shell.Namespace((Get-Item $shortcutPath).DirectoryName).ParseName((Get-Item $shortcutPath).Name)
-        $shortcut.InvokeVerb("runas")
 
         $message = "Ярлык для скрипта создан на рабочем столе."
         Write-Host $message -ForegroundColor Green
@@ -128,7 +115,6 @@ if (-Not (Test-Path $iconPath)) {
     $message = "Иконка не найдена по пути: $iconPath"
     Write-Host $message -ForegroundColor Red
     Log-Message $message
-    exit
 }
 
 # Установка и импорт модуля BurntToast для уведомлений
