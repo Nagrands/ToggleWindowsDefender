@@ -1,10 +1,10 @@
 # Версия скрипта
-$scriptVersion = "1.0.2"
+$scriptVersion = "1.0.3"
 
 # Установка кодировки для поддержки кириллицы
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Определение пути реестра для настроек Windows Defender
+# Определение путей и URL
 $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
 $serviceName = "WinDefend"
 $iconPath = Join-Path $PSScriptRoot "icons/icon.ico"
@@ -24,12 +24,10 @@ function Log-Message {
     $logEntry = "$timestamp - $level - $message"
     $logEntry | Out-File -Append -FilePath $logFile -Encoding UTF8
 
-    if ($level -eq "ERROR") {
-        Write-Host $logEntry -ForegroundColor Red
-    } elseif ($level -eq "WARNING") {
-        Write-Host $logEntry -ForegroundColor Yellow
-    } else {
-        Write-Host $logEntry -ForegroundColor Green
+    switch ($level) {
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry -ForegroundColor Green }
     }
 }
 
@@ -61,32 +59,20 @@ function Update-Script {
             $localScript = Get-Content -Path $localScriptPath -Raw
             if ($remoteScript.Content -ne $localScript) {
                 $remoteScript.Content | Out-File -FilePath $localScriptPath -Encoding UTF8
-                $message = "Скрипт обновлен до версии (v$scriptVersion)."
-                Write-Host $message -ForegroundColor Green
+                $message = "Скрипт обновлен до последней версии."
                 Log-Message $message
                 Show-Notification -title "Script Defender" -message $message
                 exit
             } else {
                 $message = "Версия скрипта (v$scriptVersion)."
-                Write-Host $message -ForegroundColor Green
                 Log-Message $message
             }
         } catch {
-            if ($_.Exception.Response.StatusCode -eq 404) {
-                $message = "Скрипт не найден в репозитории. Продолжаю выполнение локальной версии."
-                Write-Host $message -ForegroundColor Yellow
-                Log-Message $message
-            } else {
-                $message = "Ошибка при обновлении скрипта: $_"
-                Write-Host $message -ForegroundColor Red
-                Log-Message $message "ERROR"
-                Show-Notification -title "Script Defender" -message $message
-                exit
-            }
+            $message = "Ошибка при обновлении скрипта: $_"
+            Log-Message $message "ERROR"
         }
     } else {
         $message = "Отсутствует подключение к интернету. Обновление скрипта невозможно."
-        Write-Host $message -ForegroundColor Red
         Log-Message $message "ERROR"
     }
 }
@@ -106,12 +92,10 @@ function Create-Shortcut {
         $shortcut.Save()
 
         $message = "Ярлык для скрипта создан на рабочем столе."
-        Write-Host $message -ForegroundColor Green
         Log-Message $message
         Show-Notification -title "Script Defender" -message $message
     } else {
         $message = "Ярлык уже существует на рабочем столе."
-        Write-Host $message -ForegroundColor Yellow
         Log-Message $message "WARNING"
     }
 }
@@ -119,7 +103,6 @@ function Create-Shortcut {
 # Проверка существования пути к иконке
 if (-Not (Test-Path $iconPath)) {
     $message = "Иконка не найдена по пути: $iconPath"
-    Write-Host $message -ForegroundColor Red
     Log-Message $message "ERROR"
 }
 
@@ -131,14 +114,12 @@ function Ensure-BurntToastModule {
                 Install-Module -Name BurntToast -Force -Scope CurrentUser
             } catch {
                 $message = "Не удалось установить модуль BurntToast: $_"
-                Write-Host $message -ForegroundColor Red
                 Log-Message $message "ERROR"
                 Show-Notification -title "Script Defender" -message $message
                 exit
             }
         } else {
             $message = "Отсутствует подключение к интернету. Установка модуля BurntToast невозможна."
-            Write-Host $message -ForegroundColor Red
             Log-Message $message "ERROR"
             exit
         }
@@ -151,7 +132,6 @@ Ensure-BurntToastModule
 # Проверка, что скрипт запущен с правами администратора
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     $message = "Запустите этот скрипт от имени администратора."
-    Write-Host $message -ForegroundColor Red
     Log-Message $message "ERROR"
     Show-Notification -title "Script Defender" -message $message
     exit
@@ -164,7 +144,6 @@ function Disable-TamperProtection {
         Log-Message "TamperProtection успешно отключен."
     } catch {
         $message = "Не удалось отключить TamperProtection: $_"
-        Write-Host $message -ForegroundColor Red
         Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
         exit
@@ -178,7 +157,6 @@ function Enable-TamperProtection {
         Log-Message "TamperProtection успешно включен."
     } catch {
         $message = "Не удалось включить TamperProtection: $_"
-        Write-Host $message -ForegroundColor Red
         Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
     }
@@ -191,7 +169,6 @@ function Is-DefenderDisabled {
         return $defenderState.DisableRealtimeMonitoring -eq $true
     } catch {
         $message = "Ошибка при проверке состояния Windows Defender: $_"
-        Write-Host $message -ForegroundColor Red
         Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
         exit
@@ -215,13 +192,11 @@ function Set-DefenderState {
             Start-Service -Name $serviceName -ErrorAction SilentlyContinue
         }
         $message = "$action Windows Defender завершено."
-        Write-Host $message -ForegroundColor Green
         Log-Message $message
         $iconPathCurrent = if ($disable) { $iconPathDisabled } else { $iconPathEnabled }
         Show-Notification -title "Script Defender v$scriptVersion" -message $message -iconPath $iconPathCurrent
     } catch {
         $message = "Ошибка при $action Windows Defender: $_"
-        Write-Host $message -ForegroundColor Red
         Log-Message $message "ERROR"
         Show-Notification -title "Script Defender v$scriptVersion" -message $message
         exit
@@ -230,7 +205,7 @@ function Set-DefenderState {
 
 # Основной процесс
 function Main {
-    Log-Message "Начало работы скрипта версии (v$scriptVersion)."
+    Log-Message "Script Defender (v$scriptVersion)."
     Disable-TamperProtection
     if (Is-DefenderDisabled) {
         Set-DefenderState -disable $false
