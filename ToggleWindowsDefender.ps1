@@ -1,5 +1,5 @@
 # Версия скрипта
-$scriptVersion = "1.0.1"
+$scriptVersion = "1.0.2"
 
 # Установка кодировки для поддержки кириллицы
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -18,13 +18,18 @@ $localScriptPath = $MyInvocation.MyCommand.Definition
 function Log-Message {
     param (
         [string]$message,
-        [bool]$isSeparator = $false
+        [string]$level = "INFO"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    if ($isSeparator) {
-        "----------------------------------------" | Out-File -Append -FilePath $logFile -Encoding UTF8
+    $logEntry = "$timestamp - $level - $message"
+    $logEntry | Out-File -Append -FilePath $logFile -Encoding UTF8
+
+    if ($level -eq "ERROR") {
+        Write-Host $logEntry -ForegroundColor Red
+    } elseif ($level -eq "WARNING") {
+        Write-Host $logEntry -ForegroundColor Yellow
     } else {
-        "$timestamp - $message" | Out-File -Append -FilePath $logFile -Encoding UTF8
+        Write-Host $logEntry -ForegroundColor Green
     }
 }
 
@@ -74,7 +79,7 @@ function Update-Script {
             } else {
                 $message = "Ошибка при обновлении скрипта: $_"
                 Write-Host $message -ForegroundColor Red
-                Log-Message $message
+                Log-Message $message "ERROR"
                 Show-Notification -title "Script Defender" -message $message
                 exit
             }
@@ -82,7 +87,7 @@ function Update-Script {
     } else {
         $message = "Отсутствует подключение к интернету. Обновление скрипта невозможно."
         Write-Host $message -ForegroundColor Red
-        Log-Message $message
+        Log-Message $message "ERROR"
     }
 }
 
@@ -107,6 +112,7 @@ function Create-Shortcut {
     } else {
         $message = "Ярлык уже существует на рабочем столе."
         Write-Host $message -ForegroundColor Yellow
+        Log-Message $message "WARNING"
     }
 }
 
@@ -114,35 +120,39 @@ function Create-Shortcut {
 if (-Not (Test-Path $iconPath)) {
     $message = "Иконка не найдена по пути: $iconPath"
     Write-Host $message -ForegroundColor Red
-    Log-Message $message
+    Log-Message $message "ERROR"
 }
 
 # Установка и импорт модуля BurntToast для уведомлений
-if (-Not (Get-Module -ListAvailable -Name BurntToast)) {
-    if (Test-InternetConnection) {
-        try {
-            Install-Module -Name BurntToast -Force -Scope CurrentUser
-        } catch {
-            $message = "Не удалось установить модуль BurntToast: $_"
+function Ensure-BurntToastModule {
+    if (-Not (Get-Module -ListAvailable -Name BurntToast)) {
+        if (Test-InternetConnection) {
+            try {
+                Install-Module -Name BurntToast -Force -Scope CurrentUser
+            } catch {
+                $message = "Не удалось установить модуль BurntToast: $_"
+                Write-Host $message -ForegroundColor Red
+                Log-Message $message "ERROR"
+                Show-Notification -title "Script Defender" -message $message
+                exit
+            }
+        } else {
+            $message = "Отсутствует подключение к интернету. Установка модуля BurntToast невозможна."
             Write-Host $message -ForegroundColor Red
-            Log-Message $message
-            Show-Notification -title "Script Defender" -message $message
+            Log-Message $message "ERROR"
             exit
         }
-    } else {
-        $message = "Отсутствует подключение к интернету. Установка модуля BurntToast невозможна."
-        Write-Host $message -ForegroundColor Red
-        Log-Message $message
-        exit
     }
+    Import-Module BurntToast
 }
-Import-Module BurntToast
+
+Ensure-BurntToastModule
 
 # Проверка, что скрипт запущен с правами администратора
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     $message = "Запустите этот скрипт от имени администратора."
     Write-Host $message -ForegroundColor Red
-    Log-Message $message
+    Log-Message $message "ERROR"
     Show-Notification -title "Script Defender" -message $message
     exit
 }
@@ -155,7 +165,7 @@ function Disable-TamperProtection {
     } catch {
         $message = "Не удалось отключить TamperProtection: $_"
         Write-Host $message -ForegroundColor Red
-        Log-Message $message
+        Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
         exit
     }
@@ -169,7 +179,7 @@ function Enable-TamperProtection {
     } catch {
         $message = "Не удалось включить TamperProtection: $_"
         Write-Host $message -ForegroundColor Red
-        Log-Message $message
+        Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
     }
 }
@@ -182,7 +192,7 @@ function Is-DefenderDisabled {
     } catch {
         $message = "Ошибка при проверке состояния Windows Defender: $_"
         Write-Host $message -ForegroundColor Red
-        Log-Message $message
+        Log-Message $message "ERROR"
         Show-Notification -title "Script Defender" -message $message
         exit
     }
@@ -204,60 +214,37 @@ function Set-DefenderState {
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction SilentlyContinue
             Start-Service -Name $serviceName -ErrorAction SilentlyContinue
         }
-
-        Set-ItemProperty -Path $regPath -Name "DisableAntiSpyware" -Value ([int]$disable)
-        Set-ItemProperty -Path $regPath -Name "DisableRealtimeMonitoring" -Value ([int]$disable)
-        Set-ItemProperty -Path $regPath -Name "DisableBehaviorMonitoring" -Value ([int]$disable)
-        Set-ItemProperty -Path $regPath -Name "DisableOnAccessProtection" -Value ([int]$disable)
-        Set-ItemProperty -Path $regPath -Name "DisableScanOnRealtimeEnable" -Value ([int]$disable)
-
-        if ($disable) {
-            Set-ItemProperty -Path "$regPath\Real-Time Protection" -Name "DisableRealtimeMonitoring" -Value 1 -ErrorAction SilentlyContinue
-        } else {
-            Remove-ItemProperty -Path "$regPath\Real-Time Protection" -Name "DisableRealtimeMonitoring" -ErrorAction SilentlyContinue
-        }
-
-        Log-Message "$action Windows Defender успешно завершено."
-    } catch {
-        $message = "Не удалось выполнить $action Windows Defender: $_"
-        Write-Host $message -ForegroundColor Red
+        $message = "$action Windows Defender завершено."
+        Write-Host $message -ForegroundColor Green
         Log-Message $message
-        Show-Notification -title "Script Defender" -message $message -iconPath $iconPathDisabled
+        $iconPathCurrent = if ($disable) { $iconPathDisabled } else { $iconPathEnabled }
+        Show-Notification -title "Script Defender v$scriptVersion" -message $message -iconPath $iconPathCurrent
+    } catch {
+        $message = "Ошибка при $action Windows Defender: $_"
+        Write-Host $message -ForegroundColor Red
+        Log-Message $message "ERROR"
+        Show-Notification -title "Script Defender v$scriptVersion" -message $message
+        exit
     }
 }
 
-# Основная логика
-Write-Host "Проверка Windows Defender..."
-Log-Message "ToggleWindowsDefeder.ps1 (v$scriptVersion)."
-Log-Message "Проверка состояния Windows Defender ..."
-
-Update-Script
-
-Disable-TamperProtection
-
-$currentDefenderState = Is-DefenderDisabled
-
-if ($currentDefenderState) {
-    Set-DefenderState -disable:$false
-    $toastMessage = "Windows Defender включен."
-    $iconPathForNotification = $iconPathEnabled
-} else {
-    Set-DefenderState -disable:$true
-    $toastMessage = "Windows Defender отключен."
-    $iconPathForNotification = $iconPathDisabled
+# Основной процесс
+function Main {
+    Log-Message "Начало работы скрипта версии (v$scriptVersion)."
+    Disable-TamperProtection
+    if (Is-DefenderDisabled) {
+        Set-DefenderState -disable $false
+    } else {
+        Set-DefenderState -disable $true
+    }
+    Enable-TamperProtection
 }
 
-Enable-TamperProtection
-
-$message = "Переключение состояния Windows Defender завершено."
-Write-Host $message
-Log-Message $message
-
-# Добавление строки-разделителя
-Log-Message "" $true
-
-# Отправка уведомления
-Show-Notification -title "Script Defender" -message $toastMessage -iconPath $iconPathForNotification
+# Обновление скрипта
+Update-Script
 
 # Создание ярлыка на рабочем столе
 Create-Shortcut
+
+# Запуск основного процесса
+Main
